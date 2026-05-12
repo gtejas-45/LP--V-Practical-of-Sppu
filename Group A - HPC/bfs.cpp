@@ -1,104 +1,104 @@
-//BFS
-
 // ==========================================================
-// Practical 1(A): Parallel BFS using OpenMP
+// Parallel BFS using OpenMP (Graph Input Version)
 // ==========================================================
 
 #include <iostream>
+#include <vector>
 #include <queue>
 #include <omp.h>
+
 using namespace std;
 
-// Tree node structure
-struct Node {
-    int data;
-    Node *left, *right;
-};
+const int MAX = 100000;
 
-// Insert node level-wise
-Node* insert(Node* root, int data) {
-    if (!root) {
-        root = new Node;
-        root->data = data;
-        root->left = root->right = NULL;
-        return root;
-    }
+vector<int> graph[MAX];
+bool visited[MAX];
 
-    queue<Node*> q;
-    q.push(root);
-
-    while (!q.empty()) {
-        Node* temp = q.front();
-        q.pop();
-
-        // Insert left
-        if (!temp->left) {
-            temp->left = new Node{data, NULL, NULL};
-            return root;
-        } else {
-            q.push(temp->left);
-        }
-
-        // Insert right
-        if (!temp->right) {
-            temp->right = new Node{data, NULL, NULL};
-            return root;
-        } else {
-            q.push(temp->right);
-        }
-    }
-    return root;
-}
+// Lock for thread safety
+omp_lock_t lock;
 
 // Parallel BFS
-void bfs(Node* root) {
-    queue<Node*> q;
-    q.push(root);
+void bfs(int start)
+{
+    queue<int> q;
 
-    while (!q.empty()) {
+    visited[start] = true;
+    q.push(start);
+
+    while (!q.empty())
+    {
         int size = q.size();
 
         #pragma omp parallel for
-        for (int i = 0; i < size; i++) {
-            Node* curr;
+        for (int i = 0; i < size; i++)
+        {
+            int curr;
 
-            // Critical section for queue
-            #pragma omp critical
+            // Safe queue access
+            omp_set_lock(&lock);
+
+            if (!q.empty())
             {
                 curr = q.front();
                 q.pop();
-                cout << curr->data << " ";
+                cout << curr << " ";
             }
 
-            // Push children
-            #pragma omp critical
+            omp_unset_lock(&lock);
+
+            // Explore neighbors
+            for (int j = 0; j < graph[curr].size(); j++)
             {
-                if (curr->left)
-                    q.push(curr->left);
-                if (curr->right)
-                    q.push(curr->right);
+                int adj = graph[curr][j];
+
+                omp_set_lock(&lock);
+
+                if (!visited[adj])
+                {
+                    visited[adj] = true;
+                    q.push(adj);
+                }
+
+                omp_unset_lock(&lock);
             }
         }
     }
 }
 
-int main() {
-    Node* root = NULL;
-    int data;
-    char ch;
+int main()
+{
+    int n, m, start;
 
-    do {
-        cout << "Enter data: ";
-        cin >> data;
-        root = insert(root, data);
+    cout << "Enter number of nodes, edges, start node:\n";
+    cin >> n >> m >> start;
 
-        cout << "Add more nodes (y/n)? ";
-        cin >> ch;
+    cout << "Enter edges (u v):\n";
 
-    } while (ch == 'y' || ch == 'Y');
+    for (int i = 0; i < m; i++)
+    {
+        int u, v;
+        cin >> u >> v;
 
-    cout << "\nBFS Traversal:\n";
-    bfs(root);
+        graph[u].push_back(v);
+        graph[v].push_back(u);
+    }
+
+    // Initialize visited array
+    #pragma omp parallel for
+    for (int i = 0; i < n; i++)
+        visited[i] = false;
+
+    // Initialize lock
+    omp_init_lock(&lock);
+
+    cout << "\nBFS Traversal: ";
+
+    bfs(start);
+
+    cout << endl;
+
+    // Destroy lock
+    omp_destroy_lock(&lock);
 
     return 0;
 }
